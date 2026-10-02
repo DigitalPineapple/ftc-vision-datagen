@@ -15,6 +15,23 @@ import blenderproc as bproc
 
 from camera_utils import sample_camera_pose
 
+# bproc.renderer.enable_segmentation_output() (called once, before any pieces
+# are spawned) assigns each mesh object present at that time a unique
+# `pass_index`, which Blender's Object Index render pass - and therefore
+# BlenderProc's "instance" segmap - uses as the per-pixel instance id.
+# template.duplicate() copies the source template object's pass_index as-is,
+# so every spawned piece of the same class inherited the SAME id as its
+# (hidden) template and therefore the same instance id as every other piece
+# duplicated from it - collapsing all of them into a single COCO annotation/
+# bounding box per class per frame instead of one per piece. Handing out a
+# fresh pass_index to each spawned instance fixes this. NOTE: Object.pass_index
+# is clamped by Blender to [0, 32767], so a huge never-reused counter would
+# just wrap/clamp back down and collide again - instead start from a small
+# base (still well above the handful of static scene objects) and reset it
+# every frame, which is safe since all spawned instances are deleted at the
+# end of each frame before the next frame's are created.
+_INSTANCE_PASS_INDEX_BASE = 1000
+
 
 def randomize_lighting(common_cfg: Dict[str, Any], project_root: str):
     hdri_dir = os.path.join(project_root, common_cfg["hdri"]["dir"])
@@ -126,6 +143,7 @@ def spawn_pieces(scene: Dict[str, Any], season_cfg: Dict[str, Any], field_size_m
 
     placed = []  # (x, y, radius) of already-placed pieces, for overlap checks
     instances = []
+    next_pass_index = _INSTANCE_PASS_INDEX_BASE
     for _ in range(n_pieces):
         class_name = random.choices(names, weights=probs, k=1)[0]
         template = templates[class_name]
@@ -156,6 +174,12 @@ def spawn_pieces(scene: Dict[str, Any], season_cfg: Dict[str, Any], field_size_m
 
         inst = template.duplicate()
         inst.hide(False)
+        # Give this instance its own unique instance-segmentation id (see
+        # module docstring note above) - otherwise every piece duplicated
+        # from the same template shares the template's pass_index and all
+        # pieces of that class in a frame collapse into a single annotation.
+        inst.blender_obj.pass_index = next_pass_index
+        next_pass_index += 1
         inst.set_location([x, y, 0.0])
         inst.set_rotation_euler([random.uniform(0, np.pi) for _ in range(3)])
         # Real Onshape-exported CAD isn't guaranteed to be a perfectly
