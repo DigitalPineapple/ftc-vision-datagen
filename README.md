@@ -30,6 +30,17 @@ placeholder spheres so the pipeline keeps running.
 ## Setup
 
 ```powershell
+.\setup.ps1      # Windows
+```
+```bash
+./setup.sh       # macOS/Linux
+```
+
+Each script creates `.venv`, installs `requirements.txt`, and (if the `gh`
+CLI is installed and authenticated - `gh auth login`) fetches the large CAD
+meshes from the GitHub Release. Safe to re-run. Equivalent manual steps:
+
+```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
