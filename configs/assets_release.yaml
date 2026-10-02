@@ -2,5 +2,5 @@
 # GitHub Release that hosts the large CAD meshes (see large_assets.json
 # for the exact file list). Fill in `repo` once the project repo exists,
 # then run scripts/assets/publish_release_assets.py to create the release.
-repo: ""        # e.g. "songpeidu/ftc-vision-synthetic"
+repo: "DigitalPineapple/ftc-vision-datagen"
 tag: "cad-assets-v1"
