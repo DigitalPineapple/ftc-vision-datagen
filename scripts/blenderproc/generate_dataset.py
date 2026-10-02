@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from scene_builder import build_scene
 from randomizers import randomize_lighting, spawn_pieces, randomize_camera
 from camera_utils import set_intrinsics_from_camera_cfg
+from camera_degradation import apply_sensor_degradation
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -96,6 +97,11 @@ def main():
         randomize_camera(cam_cfg, field_size_m, instances)
 
         data = bproc.renderer.render()
+
+        degradation_cfg = cam_cfg.get("sensor_degradation", {})
+        data["colors"] = [
+            apply_sensor_degradation(img, degradation_cfg) for img in data["colors"]
+        ]
 
         bproc.writer.write_coco_annotations(
             output_dir,

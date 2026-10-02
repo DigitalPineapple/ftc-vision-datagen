@@ -78,6 +78,13 @@ blenderproc run scripts\blenderproc\generate_dataset.py `
 Output: `output/2026_biobuzz/` (images in `images/` + `coco_annotations.json`
 at the top level - BlenderProc's native COCO writer layout).
 
+Rendered frames are passed through a sensor-quality simulation (noise,
+blur, exposure/white-balance drift, vignetting, JPEG artifacts) matching the
+Limelight 3A's actual image quality rather than "clean" CG output - see
+`configs/camera/limelight3a.yaml` (`sensor_degradation:`) and
+`scripts/blenderproc/camera_degradation.py`. Tune the ranges or set
+`enabled: false` there to disable it.
+
 ### 2. Package for Limelight's Neural Network Trainer
 
 The [Limelight trainer](https://tools.limelightvision.io/neural-network-trainer)
@@ -130,7 +137,8 @@ assets/
   common/{field,robot,hdri}/   # shared every year
   seasons/2026_biobuzz/cad/    # this year's Onshape-exported game pieces + field structures
 scripts/
-  blenderproc/     # scene_builder, randomizers, camera_utils, placeholder_assets, generate_dataset
+  blenderproc/     # scene_builder, randomizers, camera_utils, camera_degradation,
+                   # placeholder_assets, generate_dataset
   postprocess/     # coco_to_yolo, coco_to_tfrecord + tfrecord_writer, to_limelight_dataset
   assets/          # package_release_assets.py, fetch_cad_assets.py (large CAD via GitHub Release),
                    # generate_apriltag_textures.py (regenerate AprilTag decal PNGs for new seasons/IDs)

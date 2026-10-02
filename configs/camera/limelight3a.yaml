@@ -18,3 +18,28 @@ mount_roll_jitter_deg: 3
 # to localize them precisely, so the camera should be sampled near its look-at
 # target rather than anywhere on the field.
 standoff_range_m: [0.25, 1.5]
+
+# Simulate real Limelight 3A image quality instead of "clean" CG renders:
+# sensor noise (worse under dim/variable gym lighting), auto-exposure/white-
+# balance drift, slight blur (defocus + robot vibration), vignetting, and
+# JPEG compression artifacts from its streaming pipeline. See
+# scripts/blenderproc/camera_degradation.py. Set enabled: false to disable.
+sensor_degradation:
+  enabled: true
+
+  exposure_jitter: [0.75, 1.3]        # multiplicative brightness
+  contrast_jitter: [0.85, 1.15]
+  white_balance_jitter: [0.92, 1.08]  # opposing R/B channel gain shift
+
+  gaussian_blur_prob: 0.35            # soft defocus
+  gaussian_blur_sigma_range: [0.3, 1.1]
+  motion_blur_prob: 0.15              # robot-vibration streaking
+  motion_blur_kernel_range: [3, 9]    # odd sizes sampled in this range
+
+  noise_prob: 0.85
+  shot_noise_scale_range: [0.0, 0.025]   # signal-dependent (brighter = noisier)
+  gaussian_noise_std_range: [1.5, 9.0]   # flat read noise, 0-255 scale
+
+  vignette_strength_range: [0.0, 0.3]
+
+  jpeg_quality_range: [35, 85]        # simulates the camera's own compression
