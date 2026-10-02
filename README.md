@@ -78,7 +78,32 @@ blenderproc run scripts\blenderproc\generate_dataset.py `
 Output: `output/2026_biobuzz/` (images in `images/` + `coco_annotations.json`
 at the top level - BlenderProc's native COCO writer layout).
 
-### 2. Convert to YOLO format
+### 2. Package for Limelight's Neural Network Trainer
+
+The [Limelight trainer](https://tools.limelightvision.io/neural-network-trainer)
+expects a zipped **TFRecord** dataset (`train.tfrecord` + `valid.tfrecord` +
+`label_map.pbtxt` - the same layout Roboflow's "TFRecord" export produces),
+*not* YOLO txt files. `to_limelight_dataset.py` converts COCO -> TFRecord
+directly (via the dependency-free `tfrecord_writer.py` - no `tensorflow`
+install required) and zips it:
+
+```powershell
+python scripts\postprocess\to_limelight_dataset.py `
+    --coco output\2026_biobuzz\coco_annotations.json `
+    --images_dir output\2026_biobuzz\images `
+    --out_zip output\2026_biobuzz\limelight_dataset.zip
+```
+
+Upload `limelight_dataset.zip`'s contents to Google Drive (shared publicly /
+"anyone with the link"), then paste the share link into
+https://tools.limelightvision.io/neural-network-trainer. See
+[Limelight's docs](https://docs.limelightvision.io/docs/docs-limelight/pipeline-neural/training-your-own-detector)
+for the training/upload steps.
+
+### 3. (Optional) Convert to YOLO format
+
+For training with other tools (e.g. Ultralytics YOLO) instead of/alongside
+the Limelight trainer:
 
 ```powershell
 python scripts\postprocess\coco_to_yolo.py `
@@ -86,17 +111,6 @@ python scripts\postprocess\coco_to_yolo.py `
     --images_dir output\2026_biobuzz\images `
     --out_dir output\2026_biobuzz\yolo
 ```
-
-### 3. Package for Limelight's Neural Network Trainer
-
-```powershell
-python scripts\postprocess\to_limelight_dataset.py `
-    --yolo_dir output\2026_biobuzz\yolo `
-    --out_zip output\2026_biobuzz\limelight_dataset.zip
-```
-
-Upload `limelight_dataset.zip` to the Limelight NN Trainer
-(https://docs.limelightvision.io/neural-network-training/training-a-custom-detector).
 
 ## Recommended: mix with real data
 
@@ -117,7 +131,7 @@ assets/
   seasons/2026_biobuzz/cad/    # this year's Onshape-exported game pieces + field structures
 scripts/
   blenderproc/     # scene_builder, randomizers, camera_utils, placeholder_assets, generate_dataset
-  postprocess/     # coco_to_yolo, to_limelight_dataset
+  postprocess/     # coco_to_yolo, coco_to_tfrecord + tfrecord_writer, to_limelight_dataset
   assets/          # package_release_assets.py, fetch_cad_assets.py (large CAD via GitHub Release),
                    # generate_apriltag_textures.py (regenerate AprilTag decal PNGs for new seasons/IDs)
 output/            # gitignored render output
