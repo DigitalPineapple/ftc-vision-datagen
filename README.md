@@ -27,6 +27,16 @@ processing notes). If any `cad_path` file is ever missing, game pieces
 (not field structures) automatically fall back to correctly-sized/colored
 placeholder spheres so the pipeline keeps running.
 
+## Example renders
+
+Sample output from `generate_dataset.py` (domain-randomized lighting, camera
+pose, and piece placement; pieces rendered from real Onshape CAD):
+
+| | | |
+|---|---|---|
+| ![](examples/example_01_mixed_balls.jpg) | ![](examples/example_02_closeup_pollen.jpg) | ![](examples/example_03_nectar_cluster.jpg) |
+| ![](examples/example_04_dense_cluster_robot.jpg) | ![](examples/example_05_field_perimeter.jpg) | ![](examples/example_06_flower_structure.jpg) |
+
 ## Setup
 
 ```powershell
