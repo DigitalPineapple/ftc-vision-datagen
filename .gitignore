@@ -1,0 +1,28 @@
+# Rendered output, caches, and Blender backups are not versioned.
+output/
+blender_install/
+*.blend1
+*.blend2
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.DS_Store
+
+# scene_builder.py's _load_or_build_template() auto-regenerates these cached
+# processed-mesh libraries next to their source CAD on first run (see
+# scripts/blenderproc/scene_builder.py) - never commit, always derived.
+*.processed_cache.blend
+
+# Large CAD meshes (100-200MB+) are NOT committed to git - they're published
+# as gzip-compressed GitHub Release assets instead (see
+# scripts/assets/package_release_assets.py, assets/large_assets_manifest.json,
+# configs/assets_release.yaml). Run scripts/assets/fetch_cad_assets.py after
+# cloning to restore them.
+/assets/common/field/perimeter.obj
+/assets/common/field/tiles.obj
+/assets/seasons/2026_biobuzz/cad/hive_structure.obj
+/assets/seasons/2026_biobuzz/cad/flower_structure.obj
+
+# Local staging area for scripts/assets/package_release_assets.py output.
+/dist/

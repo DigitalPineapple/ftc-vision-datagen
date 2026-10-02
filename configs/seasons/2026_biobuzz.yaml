@@ -1,0 +1,99 @@
+# BIOBUZZ (FTC 2026-2027) game piece definitions.
+# Source: AndyMark BIOBUZZ Scoring Elements listing + team season write-ups.
+# NOTE: verify exact dimensions/colors against the official Game Manual Part 2
+# once published, and update cad_path once Onshape CAD is exported (see
+# assets/seasons/2026_biobuzz/README.md).
+
+season: 2026_biobuzz
+game_name: BIOBUZZ
+
+classes:
+  - name: pollen
+    color_rgb: [0.95, 0.85, 0.1]        # yellow
+    shape: sphere
+    diameter_m: 0.0711                   # 2.8 in
+    weight_kg: 0.025                     # 0.055 lb
+    cad_path: assets/seasons/2026_biobuzz/cad/pollen.obj   # optional; falls back to primitive sphere
+    count_in_full_set: 40
+
+  - name: nectar_red
+    color_rgb: [0.8, 0.05, 0.05]         # red alliance nectar
+    shape: sphere
+    diameter_m: 0.0914                   # 3.6 in
+    weight_kg: 0.0414                    # 0.091 lb
+    cad_path: assets/seasons/2026_biobuzz/cad/nectar.obj   # shared geometry, recolored
+    count_in_full_set: 8
+
+  - name: nectar_blue
+    color_rgb: [0.05, 0.15, 0.85]        # blue alliance nectar
+    shape: sphere
+    diameter_m: 0.0914                   # 3.6 in
+    weight_kg: 0.0414
+    cad_path: assets/seasons/2026_biobuzz/cad/nectar.obj
+    count_in_full_set: 8
+
+spawn:
+  total_pieces_range: [3, 40]
+  per_class_ratio: proportional_to_count_in_full_set   # 40:8:8 -> ~71%/14%/14%
+  cluster_probability: 0.35
+
+distractors:
+  use_robot_meshes: true
+  max_count: 2
+
+# Season-specific static field structures (scoring elements) - these change
+# every year, unlike the common perimeter/tiles in assets/common/field/.
+# Entries whose cad_path doesn't exist are silently skipped (no fallback
+# primitive, since we don't know these structures' exact non-spherical shape).
+field_elements:
+  - name: hive_goal
+    cad_path: assets/seasons/2026_biobuzz/cad/hive_structure.obj
+    # This single exported part already contains BOTH the red- and
+    # blue-alliance-colored ribs/April tags in one mesh. Confirmed correct by
+    # the official "2026-2027 Event Field Setup Guide" (Sec. 9): the separate
+    # pre-built Red Hive and Blue Hive assemblies both mount onto ONE shared
+    # Frame Assembly via Axle Pivot Cradles at the field center - so one
+    # combined structure at the field center ([0, 0, 0]) is correct, not a
+    # placeholder guess.
+    placements:
+      - position: [0.0, 0.0, 0.0]
+        rotation_euler: [0, 0, 3.14159]
+
+  - name: flower_goal
+    cad_path: assets/seasons/2026_biobuzz/cad/flower_structure.obj
+    # 4 identical Flower Assemblies (am-5855), each mounted at a Field
+    # Perimeter wall seam on top of the tiles (per the official "2026-2027
+    # Event Field Setup Guide" Sec. 10 "Flower Installation" + Fig. in Sec. 6
+    # "Tile Coordinates"). Measured from the guide's field diagram (Sec. 10.1
+    # "Flower Locations" figure): the 4 Flowers sit at the 4 wall midpoints,
+    # each offset by exactly one tile-width (~0.5976 m, = field half-size /
+    # 3) from the wall's center, in a consistent 90-degree-rotational
+    # pattern (not simple left-right mirroring) - i.e. position (x, y)
+    # rotates to (y, -x) for each successive Flower going around the field.
+    # Local-space axis convention (verified by rendering the isolated CAD
+    # and checking per-part centroid offsets): the Flower's local +Y axis
+    # points toward its mounting wall ("Flower Field Bracket"/"Under Field
+    # Bracket" and "Backstop" are all offset toward local +Y), so each
+    # rotation_euler below just rotates local +Y to face outward at that
+    # wall.
+    #
+    # Radial offset correction: the CAD's object origin is NOT at the
+    # wall-contact point. Measured per-group bboxes of the processed mesh
+    # show the "Flower Field Bracket"/"Under Field Bracket" groups (the
+    # parts that actually clamp onto the perimeter wall) sit at local
+    # Y ~= 0.025-0.095 (center ~0.061), not Y=0. The perimeter wall itself
+    # spans world radius 1.79285 (tile edge / inner face) to 1.82257 (outer
+    # face), so its mid-thickness is at 1.80771. Placing the origin at the
+    # raw tile-edge radius (1.7929) therefore pushed the whole structure
+    # ~4.7cm too far outward (part of it clipping outside the perimeter, as
+    # observed in render). Corrected radial coordinate = 1.80771 - 0.061
+    # ~= 1.7469.
+    placements:
+      - position: [-0.5976, 1.7469, 0.0]     # scoring-side wall, offset toward red
+        rotation_euler: [0, 0, 0]
+      - position: [1.7469, 0.5976, 0.0]      # blue-side wall, offset toward scoring
+        rotation_euler: [0, 0, -1.5708]
+      - position: [0.5976, -1.7469, 0.0]     # audience-side wall, offset toward blue
+        rotation_euler: [0, 0, 3.14159]
+      - position: [-1.7469, -0.5976, 0.0]    # red-side wall, offset toward audience
+        rotation_euler: [0, 0, 1.5708]

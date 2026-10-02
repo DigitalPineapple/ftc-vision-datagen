@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "dest_path": "assets/common/field/perimeter.obj",
+      "release_asset_name": "common_field_perimeter.obj.gz",
+      "sha256": "b7870c8cb81af1e2bf3e5727f8ad95ebfda648d6d83510c313089bfa27031f21",
+      "size_original": 119931162,
+      "size_compressed": 23328034
+    },
+    {
+      "dest_path": "assets/common/field/tiles.obj",
+      "release_asset_name": "common_field_tiles.obj.gz",
+      "sha256": "9a728cf7b4760d375245e849c5537b430c4a11334ce20c4d1abd97a754156586",
+      "size_original": 30383625,
+      "size_compressed": 4491765
+    },
+    {
+      "dest_path": "assets/seasons/2026_biobuzz/cad/hive_structure.obj",
+      "release_asset_name": "seasons_2026_biobuzz_cad_hive_structure.obj.gz",
+      "sha256": "44569a5181afbbbd9deebb9119a4f9cbe3e2993158de46da906f5246387db42d",
+      "size_original": 211566566,
+      "size_compressed": 45787095
+    },
+    {
+      "dest_path": "assets/seasons/2026_biobuzz/cad/flower_structure.obj",
+      "release_asset_name": "seasons_2026_biobuzz_cad_flower_structure.obj.gz",
+      "sha256": "08192c77af3e17a0d7cf93a4406488dd6af0adaaf0260493234ef7461da6b1c5",
+      "size_original": 68777857,
+      "size_compressed": 14516827
+    }
+  ]
+}

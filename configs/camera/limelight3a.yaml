@@ -1,0 +1,20 @@
+# Limelight 3A camera model, used so synthetic renders match the real sensor's
+# field of view / resolution. Source: docs.limelightvision.io (Limelight 3A Quick-Start).
+
+name: limelight3a
+resolution: [640, 480]        # also supports up to 1280x960 @ 60fps
+hfov_deg: 54.5
+vfov_deg: 42.0
+
+# Mounting envelope on an FTC robot pointed down/forward at the field -
+# used to randomize camera placement realistically instead of a single fixed pose.
+mount_height_range_m: [0.15, 0.45]
+mount_tilt_deg_range: [-40, -5]   # negative = pointing downward toward field
+mount_yaw_jitter_deg: 180          # camera can face any direction around the robot
+mount_roll_jitter_deg: 3
+
+# Horizontal distance (meters) the robot sits from the piece(s) it's targeting.
+# A real intake robot drives up close to game pieces before the Limelight needs
+# to localize them precisely, so the camera should be sampled near its look-at
+# target rather than anywhere on the field.
+standoff_range_m: [0.25, 1.5]

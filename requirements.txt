@@ -1,0 +1,4 @@
+blenderproc>=2.7
+pyyaml>=6.0
+numpy>=1.24
+opencv-python>=4.8   # scripts/assets/generate_apriltag_textures.py (cv2.aruco)

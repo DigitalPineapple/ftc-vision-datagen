@@ -1,0 +1,31 @@
+# Shared across ALL seasons: field, generic robot distractors, lighting environments.
+# These rarely change year to year (FTC field perimeter/tile size is stable),
+# so this file should not need edits when adding a new season.
+
+field:
+  size_m: [3.66, 3.66]        # standard 12ft x 12ft FTC field
+  # Real official CAD, exported directly from Onshape as OBJ (units = meters,
+  # Z-up, per-part names/colors preserved via the accompanying .mtl - see
+  # assets/common/field/README.md for the export recipe). Falls back to a flat
+  # plane if these files are absent.
+  meshes:
+    - assets/common/field/tiles.obj
+    - assets/common/field/perimeter.obj
+  fallback_plane_color_rgb: [0.15, 0.15, 0.15]  # used if mesh files are absent
+
+robot_distractors:
+  dir: assets/common/robot     # optional .obj/.stp meshes of generic robot subsystems
+  max_instances: 2
+
+hdri:
+  dir: assets/common/hdri       # environment maps for lighting randomization (gym interiors, etc.)
+
+render:
+  engine: CYCLES
+  samples: 100
+  denoise: true
+  view_transform: AgX          # photographic-looking tonemap (vs. flat/clipped "Standard")
+
+output:
+  base_dir: output
+  annotation_format: coco       # BlenderProc native writer; converted downstream
