@@ -157,25 +157,37 @@ def _smart_uv_unwrap(obj):
     at other angles (e.g. on the Hive's angled basket walls) still degenerate
     to sampling a single near-constant texel, which for AprilTag 36h11's
     mostly-black border reads as solid black (reported via rendered images).
-    Smart UV Project computes a real per-face planar unwrap from each face's
-    own normal, so it's robust to the mesh's orientation in local space -
-    appropriate here since each of these decal objects is just 1-2 flat
-    quads, not a complex multi-angle surface.
 
-    Smart Project packs every face/island it unwraps into a *shared* 0-1 UV
-    box, sized by each island's relative area - so a decal object that also
-    carries small border/bevel/back-face geometry (confirmed present on the
-    Hive's "April Tag" panel objects) only gives its main decal face a small
-    sub-rectangle of 0-1, not the full range. With a single repeated tag
-    texture that was invisible (any crop still looked like "a tag"), but it
-    broke the 4-tags-in-a-row composite texture (only one tile ever showed,
-    stretched to fill that sub-rectangle). Fix: after the initial smart
-    project, find this object's single largest-area face (the real flat
-    decal face) and rescale/translate *all* UVs so that face's UV bounds
-    exactly span [0,1]x[0,1] - minor border/back faces may land outside that
-    box, which is fine since they aren't the visible decal surface."""
+    First attempt used Blender's Smart UV Project, but that gave two
+    problems once the decal texture became a 4-tags-in-a-row composite
+    (rather than a single repeated tag, where any crop/orientation still
+    "looked like a tag"):
+      1. Smart Project packs every face/island it unwraps (including this
+         object's small border/bevel/back-face geometry, confirmed present
+         on the Hive's "April Tag" panel objects) into a *shared* 0-1 UV
+         box sized by relative area, so the real decal face only got a
+         small sub-rectangle - only one of the 4 tags ever showed, stretched
+         to fill that sub-rectangle.
+      2. Smart Project's per-face basis/orientation is chosen by its own
+         internal heuristic (not tied to any real-world axis), giving no
+         control over the tags' reading orientation.
+
+    A later attempt tried deriving (right, up) directly from the face's own
+    PCA-dominant axis instead of world Z - mathematically "more correct" to
+    the raw mesh, but it also picked up the panel's own small manufacturing/
+    bevel tilt (a few degrees), rendering each tag slightly rotated/diamond-
+    shaped. Visually confirmed worse than the world-Z-based approach below
+    (user: "i think tags3 fixed the direction issue" - tags3 was rendered
+    with this world-Z basis).
+
+    Fix: project onto a (right, up) basis derived from the object's actual
+    largest-area *outward-facing* face normal crossed with the world Z (up)
+    axis - keeps each tag's own square perfectly axis-aligned/non-tilted,
+    then rescale/translate so that face's UV bounds span exactly
+    [0,1]x[0,1]."""
     import bpy
     import bmesh
+    from mathutils import Vector
 
     view_layer = bpy.context.view_layer
     prev_active = view_layer.objects.active
@@ -185,15 +197,53 @@ def _smart_uv_unwrap(obj):
     view_layer.objects.active = obj.blender_obj
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.uv.smart_project()
 
     mesh = obj.blender_obj.data
     bm = bmesh.from_edit_mesh(mesh)
-    uv_layer = bm.loops.layers.uv.active
-    if uv_layer is not None and bm.faces:
-        largest_face = max(bm.faces, key=lambda f: f.calc_area())
-        us = [loop[uv_layer].uv[0] for loop in largest_face.loops]
-        vs = [loop[uv_layer].uv[1] for loop in largest_face.loops]
+    bm.faces.ensure_lookup_table()
+    uv_layer = bm.loops.layers.uv.active or bm.loops.layers.uv.new("UVMap")
+
+    if bm.faces:
+        mat_world = obj.blender_obj.matrix_world
+        rot_world = mat_world.to_3x3()
+        rot_world_inv = rot_world.inverted()
+        # Reference point for "which of the near-duplicate front/back faces
+        # is actually visible" - the object's own local origin is a
+        # reasonable proxy for the Hive's central axis (Onshape assemblies
+        # are typically centered on the part's own origin), so the face
+        # whose normal points away from it is the outward (visible) one.
+        origin_local = Vector((0.0, 0.0, 0.0))
+
+        def face_sort_key(f):
+            center = f.calc_center_median()
+            outward = (center - origin_local).dot(f.normal) > 0
+            return (1 if outward else 0, f.calc_area())
+
+        largest_face = max(bm.faces, key=face_sort_key)
+        world_normal = (rot_world @ largest_face.normal).normalized()
+        world_up_ref = Vector((0.0, 0.0, 1.0))
+        world_right = world_up_ref.cross(world_normal)
+        if world_right.length < 1e-6:
+            # face normal is (near) parallel to world Z - fall back to
+            # world X as the "up" reference so cross() isn't degenerate.
+            world_up_ref = Vector((1.0, 0.0, 0.0))
+            world_right = world_up_ref.cross(world_normal)
+        world_right.normalize()
+        world_up = world_normal.cross(world_right).normalized()
+
+        local_right = (rot_world_inv @ world_right).normalized()
+        local_up = (rot_world_inv @ world_up).normalized()
+
+        us, vs = [], []
+        for face in bm.faces:
+            for loop in face.loops:
+                co = loop.vert.co
+                u = co.dot(local_right)
+                v = co.dot(local_up)
+                loop[uv_layer].uv = (u, v)
+                if face is largest_face:
+                    us.append(u)
+                    vs.append(v)
         umin, umax = min(us), max(us)
         vmin, vmax = min(vs), max(vs)
         uspan = max(umax - umin, 1e-6)

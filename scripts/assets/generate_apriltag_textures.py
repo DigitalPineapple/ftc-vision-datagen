@@ -42,6 +42,22 @@ ROW_GROUPS = {
 }
 
 
+def _generate_tile(aruco_dict, tag_id: int, size_px: int, quiet_frac: float = 0.12):
+    """Render one tag with a white quiet-zone margin baked in (on top of the
+    tag's own built-in 1-cell black border) - real printed AprilTags always
+    carry this margin, and it also keeps every tile visually consistent
+    regardless of id (earlier tiles 30/34/38/42 happened to have one from an
+    older ad hoc generation; freshly generated ids didn't, which is why one
+    tag per row previously looked different from its 3 neighbors)."""
+    core_px = max(1, int(round(size_px * (1 - 2 * quiet_frac))))
+    core = cv2.aruco.generateImageMarker(aruco_dict, tag_id, core_px)
+    pad_lo = (size_px - core_px) // 2
+    pad_hi = size_px - core_px - pad_lo
+    return cv2.copyMakeBorder(
+        core, pad_lo, pad_hi, pad_lo, pad_hi, cv2.BORDER_CONSTANT, value=255
+    )
+
+
 def compose_rows(out_dir: str, family: str, size_px: int, quiet_px: int):
     """Horizontally stitch each group's 4 tag images into one row image,
     with a white quiet-zone gap between tags (matching AprilTag's own white
@@ -80,6 +96,8 @@ def main():
                          help="white gap (px) between tags in the composited row images")
     parser.add_argument("--skip_rows", action="store_true",
                          help="only generate individual tag PNGs, skip row compositing")
+    parser.add_argument("--force", action="store_true",
+                         help="regenerate individual tag PNGs even if already present")
     args = parser.parse_args()
 
     out_dir = os.path.join(PROJECT_ROOT, "assets", "seasons", args.season, "textures")
@@ -88,10 +106,10 @@ def main():
     aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICTS[args.family])
     for tag_id in args.ids:
         out_path = os.path.join(out_dir, f"apriltag_{args.family}_id{tag_id}.png")
-        if os.path.isfile(out_path):
+        if os.path.isfile(out_path) and not args.force:
             print(f"SKIP (already exists, won't overwrite): {out_path}")
             continue
-        marker = cv2.aruco.generateImageMarker(aruco_dict, tag_id, args.size_px)
+        marker = _generate_tile(aruco_dict, tag_id, args.size_px)
         cv2.imwrite(out_path, marker)
         print(f"Wrote {out_path}")
 
