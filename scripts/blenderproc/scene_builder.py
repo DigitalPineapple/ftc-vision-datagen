@@ -153,7 +153,16 @@ def _make_apriltag_material(image_path: str):
     tex_node.image = image
     tex_node.interpolation = "Closest"  # keep the tag's sharp black/white edges crisp
     tex_coord = mat.new_node("ShaderNodeTexCoord")
-    mat.link(tex_coord.outputs["Object"], tex_node.inputs["Vector"])
+    # The Onshape OBJ export carries no UV data at all (no "vt" lines), so
+    # raw Object-space coordinates (the previous choice) feed the image
+    # texture a position in meters, not normalized [0,1] UV space - for a
+    # small decal far from local origin this samples only a single, nearly
+    # constant texel across the whole face, which for an AprilTag's mostly-
+    # black border often reads as solid black. "Generated" coordinates are
+    # automatically normalized to [0,1] over *this object's own* local
+    # bounding box, so each decal gets the full tag image correctly mapped
+    # regardless of its position/scale in the larger assembly.
+    mat.link(tex_coord.outputs["Generated"], tex_node.inputs["Vector"])
     mat.set_principled_shader_value("Base Color", tex_node.outputs["Color"])
     mat.set_principled_shader_value("Roughness", 0.4)
     return mat
