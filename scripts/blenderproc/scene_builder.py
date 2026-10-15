@@ -160,8 +160,22 @@ def _smart_uv_unwrap(obj):
     Smart UV Project computes a real per-face planar unwrap from each face's
     own normal, so it's robust to the mesh's orientation in local space -
     appropriate here since each of these decal objects is just 1-2 flat
-    quads, not a complex multi-angle surface."""
+    quads, not a complex multi-angle surface.
+
+    Smart Project packs every face/island it unwraps into a *shared* 0-1 UV
+    box, sized by each island's relative area - so a decal object that also
+    carries small border/bevel/back-face geometry (confirmed present on the
+    Hive's "April Tag" panel objects) only gives its main decal face a small
+    sub-rectangle of 0-1, not the full range. With a single repeated tag
+    texture that was invisible (any crop still looked like "a tag"), but it
+    broke the 4-tags-in-a-row composite texture (only one tile ever showed,
+    stretched to fill that sub-rectangle). Fix: after the initial smart
+    project, find this object's single largest-area face (the real flat
+    decal face) and rescale/translate *all* UVs so that face's UV bounds
+    exactly span [0,1]x[0,1] - minor border/back faces may land outside that
+    box, which is fine since they aren't the visible decal surface."""
     import bpy
+    import bmesh
 
     view_layer = bpy.context.view_layer
     prev_active = view_layer.objects.active
@@ -172,6 +186,25 @@ def _smart_uv_unwrap(obj):
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project()
+
+    mesh = obj.blender_obj.data
+    bm = bmesh.from_edit_mesh(mesh)
+    uv_layer = bm.loops.layers.uv.active
+    if uv_layer is not None and bm.faces:
+        largest_face = max(bm.faces, key=lambda f: f.calc_area())
+        us = [loop[uv_layer].uv[0] for loop in largest_face.loops]
+        vs = [loop[uv_layer].uv[1] for loop in largest_face.loops]
+        umin, umax = min(us), max(us)
+        vmin, vmax = min(vs), max(vs)
+        uspan = max(umax - umin, 1e-6)
+        vspan = max(vmax - vmin, 1e-6)
+        for face in bm.faces:
+            for loop in face.loops:
+                uv = loop[uv_layer].uv
+                uv.x = (uv.x - umin) / uspan
+                uv.y = (uv.y - vmin) / vspan
+        bmesh.update_edit_mesh(mesh)
+
     bpy.ops.object.mode_set(mode="OBJECT")
     view_layer.objects.active = prev_active
     for o in prev_selected:
@@ -265,18 +298,22 @@ def load_field_elements(season_cfg: Dict[str, Any], project_root: str):
     spherical game pieces)."""
     elements = []
     cell_wall_mat = _make_cell_wall_material()
-    # 4 real April Tag decals on the hive (blue/red x audience/scoring) - use
-    # a distinct generated tag ID per decal for variety, matching how the
-    # real field uses different fixed IDs per goal/location.
+    # Each goal side's "April Tag Audience/Scoring" decal is a SINGLE flat
+    # panel in the CAD (confirmed by inspecting hive_structure.obj: one
+    # continuous ~0.43m-wide face per slot, not 4 separate decal faces), but
+    # the real structure shows 4 distinct AprilTags in a row on each panel.
     # Real Hive tag IDs from the game manual: Red side Audience=30-33,
     # Scoring=34-37; Blue side Audience=38-41, Scoring=42-45 (ranges exist
     # because each physical field at an event gets a different ID to avoid
-    # cross-field interference) - picking one representative valid ID per
-    # decal slot.
+    # cross-field interference) - use a composited "4 tags in a row" image
+    # per slot (see scripts/assets/generate_apriltag_textures.py's
+    # compose_rows()) instead of a single repeated tag, so the decal matches
+    # the real structure's layout (2 alliance colors x 4 tags each = 8 per
+    # side, 16 total).
     tex_dir = os.path.join(project_root, "assets", "seasons", "2026_biobuzz", "textures")
     apriltag_mats = {
-        key: _make_apriltag_material(os.path.join(tex_dir, f"apriltag_36h11_id{tag_id}.png"))
-        for key, tag_id in [("red1", 30), ("red2", 34), ("blue1", 38), ("blue2", 42)]
+        key: _make_apriltag_material(os.path.join(tex_dir, f"apriltag_row_{key}.png"))
+        for key in ("red1", "red2", "blue1", "blue2")
     }
     default_apriltag_mat = next(iter(apriltag_mats.values()))
     sticker_mat = _make_panel_sticker_material()
