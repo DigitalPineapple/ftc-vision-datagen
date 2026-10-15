@@ -23,7 +23,7 @@ hdri:
 render:
   engine: CYCLES
   samples: 100
-  denoise: true
+  denoise: false
   view_transform: AgX          # photographic-looking tonemap (vs. flat/clipped "Standard")
 
 output:
