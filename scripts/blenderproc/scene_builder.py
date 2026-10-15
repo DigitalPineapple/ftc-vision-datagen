@@ -105,7 +105,18 @@ def _style_field_materials(objs: List):
     """
     glass_mat = bproc.material.create("field_glass")
     glass_mat.set_principled_shader_value("Base Color", [0.9, 0.95, 0.98, 1.0])
-    glass_mat.set_principled_shader_value("Roughness", 0.02)
+    # Was 0.02 (near-mirror). At true grazing angles (the typical view angle
+    # from a low, near-floor camera looking across the field toward a side
+    # wall - exactly our Limelight's mount height), Fresnel reflectance
+    # approaches 100% regardless of roughness, and a near-zero-roughness
+    # mirror reflects the HDRI's lower hemisphere (often dark/unlit, since
+    # most interior HDRIs have little real detail below floor level) as a
+    # sharp, essentially solid-black wedge matching the panel's silhouette
+    # (reported via rendered images 000036.jpg, 000383.jpg, 000000.jpg).
+    # Raising roughness blurs that grazing-angle reflection into a soft,
+    # low-contrast gradient instead of a flat, misleadingly-black region,
+    # while still keeping the panel glossy/glass-like head-on.
+    glass_mat.set_principled_shader_value("Roughness", 0.15)
     glass_mat.set_principled_shader_value("Transmission Weight", 0.85)
     glass_mat.set_principled_shader_value("IOR", 1.45)
     # Physically, ANY dielectric (regardless of IOR) approaches 100% Fresnel
@@ -138,6 +149,35 @@ def _make_cell_wall_material():
     return mat
 
 
+def _smart_uv_unwrap(obj):
+    """The Onshape OBJ export carries no UV data at all (no "vt" lines).
+    "Generated" texture coordinates (normalized to the object's own local
+    bounding box) only map a decal's image correctly when that decal's flat
+    face happens to align with the bounding box's X/Y axes - decals mounted
+    at other angles (e.g. on the Hive's angled basket walls) still degenerate
+    to sampling a single near-constant texel, which for AprilTag 36h11's
+    mostly-black border reads as solid black (reported via rendered images).
+    Smart UV Project computes a real per-face planar unwrap from each face's
+    own normal, so it's robust to the mesh's orientation in local space -
+    appropriate here since each of these decal objects is just 1-2 flat
+    quads, not a complex multi-angle surface."""
+    import bpy
+
+    view_layer = bpy.context.view_layer
+    prev_active = view_layer.objects.active
+    prev_selected = list(bpy.context.selected_objects)
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.blender_obj.select_set(True)
+    view_layer.objects.active = obj.blender_obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project()
+    bpy.ops.object.mode_set(mode="OBJECT")
+    view_layer.objects.active = prev_active
+    for o in prev_selected:
+        o.select_set(True)
+
+
 def _make_apriltag_material(image_path: str):
     """The Onshape export has no image textures, so the April Tag decal
     parts come through as a flat solid Kd=white - indistinguishable from the
@@ -153,16 +193,11 @@ def _make_apriltag_material(image_path: str):
     tex_node.image = image
     tex_node.interpolation = "Closest"  # keep the tag's sharp black/white edges crisp
     tex_coord = mat.new_node("ShaderNodeTexCoord")
-    # The Onshape OBJ export carries no UV data at all (no "vt" lines), so
-    # raw Object-space coordinates (the previous choice) feed the image
-    # texture a position in meters, not normalized [0,1] UV space - for a
-    # small decal far from local origin this samples only a single, nearly
-    # constant texel across the whole face, which for an AprilTag's mostly-
-    # black border often reads as solid black. "Generated" coordinates are
-    # automatically normalized to [0,1] over *this object's own* local
-    # bounding box, so each decal gets the full tag image correctly mapped
-    # regardless of its position/scale in the larger assembly.
-    mat.link(tex_coord.outputs["Generated"], tex_node.inputs["Vector"])
+    # Requires a real per-face UV unwrap (_smart_uv_unwrap(), called on each
+    # tag decal object before this material is assigned) - "Object"/
+    # "Generated" coordinates aren't orientation-robust for decals mounted
+    # at arbitrary angles (see _smart_uv_unwrap's docstring).
+    mat.link(tex_coord.outputs["UV"], tex_node.inputs["Vector"])
     mat.set_principled_shader_value("Base Color", tex_node.outputs["Color"])
     mat.set_principled_shader_value("Roughness", 0.4)
     return mat
@@ -272,6 +307,18 @@ def load_field_elements(season_cfg: Dict[str, Any], project_root: str):
             ]
             special = set(id(o) for o in tag_objs + sticker_objs + skin_objs)
             plain_objs = [o for o in objs if id(o) not in special]
+
+            # The Onshape OBJ export has no UV data at all - a prior attempt
+            # using "Generated" texture coordinates (normalized to each
+            # object's own local bounding box) only worked when a decal's
+            # flat face happened to align with that bbox's X/Y axes; decals
+            # mounted at other angles still degenerated to a single sampled
+            # texel (reported via rendered images showing some tags with a
+            # partial checker pattern, others solid black). Give each decal
+            # a real per-face planar UV unwrap instead, which is robust to
+            # the mesh's orientation in local space.
+            for o in tag_objs:
+                _smart_uv_unwrap(o)
 
             for o in tag_objs:
                 name_lower = o.get_name().lower()
