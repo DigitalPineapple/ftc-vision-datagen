@@ -36,8 +36,9 @@ from blenderproc.python.utility.LabelIdMapping import LabelIdMapping
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from scene_builder import build_scene
 from randomizers import randomize_lighting, spawn_pieces, randomize_camera
-from camera_utils import set_intrinsics_from_camera_cfg
+from camera_utils import set_intrinsics_from_camera_cfg, build_K_from_camera_cfg
 from camera_degradation import apply_sensor_degradation
+from visibility import compute_frame_visibility, attach_visibility_to_coco
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -100,6 +101,7 @@ def main():
     field_size_m = common_cfg["field"]["size_m"]
 
     set_intrinsics_from_camera_cfg(cam_cfg)
+    K = build_K_from_camera_cfg(cam_cfg)
     # Templates carry an int category_id (see scene_builder.build_label_mapping);
     # give everything else (field, distractors) a default "background" id of 0.
     bproc.renderer.enable_segmentation_output(
@@ -113,9 +115,12 @@ def main():
         randomize_lighting(common_cfg, PROJECT_ROOT)
         instances = spawn_pieces(scene, season_cfg, field_size_m)
         structures = scene["field_elements"] + scene["distractors"]
-        randomize_camera(cam_cfg, field_size_m, instances, structures)
+        cam2world = randomize_camera(cam_cfg, field_size_m, instances, structures)
 
         data = bproc.renderer.render()
+        visibility_records = compute_frame_visibility(
+            data["instance_segmaps"][0], instances, cam2world, K
+        )
 
         degradation_cfg = cam_cfg.get("sensor_degradation", {})
         data["colors"] = [
@@ -131,6 +136,7 @@ def main():
             append_to_existing_output=True,
             label_mapping=label_mapping,
         )
+        attach_visibility_to_coco(output_dir, visibility_records)
 
         # Clean up this frame's spawned pieces so the next iteration starts fresh.
         for inst in instances:

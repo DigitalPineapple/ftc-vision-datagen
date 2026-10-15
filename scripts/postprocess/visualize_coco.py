@@ -31,7 +31,7 @@ _COLORS = [
 ]
 
 
-def visualize(coco_path: str, images_dir: str, out_dir: str, limit: int = 0):
+def visualize(coco_path: str, images_dir: str, out_dir: str, limit: int = 0, amodal: bool = False):
     with open(coco_path, "r") as f:
         coco = json.load(f)
 
@@ -63,8 +63,16 @@ def visualize(coco_path: str, images_dir: str, out_dir: str, limit: int = 0):
             name = categories.get(cat_id, str(cat_id))
             color = color_by_cat.get(cat_id, (255, 255, 255))
 
+            # Full (amodal) extent incl. occluded/off-frame parts: thin dashed-look
+            # white outline, only the in-frame portion can be drawn.
+            if amodal and ann.get("amodal_bbox"):
+                ax, ay, aw, ah = ann["amodal_bbox"]
+                cv2.rectangle(img, (ax, ay), (ax + aw, ay + ah), (255, 255, 255), 1, cv2.LINE_AA)
+
             cv2.rectangle(img, (x, y), (x + w, y + h), color, 2)
             label = f"{name}"
+            if ann.get("visibility") is not None:
+                label += f" {ann['visibility']:.2f}"
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             label_y = y - 6 if y - 6 > th else y + h + th + 4
             cv2.rectangle(img, (x, label_y - th - 4), (x + tw + 4, label_y + 2), color, -1)
@@ -82,5 +90,7 @@ if __name__ == "__main__":
     parser.add_argument("--images_dir", required=True)
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--limit", type=int, default=0, help="0 = all images")
+    parser.add_argument("--amodal", action="store_true",
+                        help="also draw each piece's full (occluded/off-frame included) bbox in white")
     args = parser.parse_args()
-    visualize(args.coco, args.images_dir, args.out_dir, args.limit)
+    visualize(args.coco, args.images_dir, args.out_dir, args.limit, args.amodal)

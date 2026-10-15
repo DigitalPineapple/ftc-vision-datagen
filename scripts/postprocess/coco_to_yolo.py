@@ -31,7 +31,11 @@ def convert(coco_path: str, images_dir: str, out_dir: str):
         for cat in sorted(coco["categories"], key=lambda c: cat_id_to_yolo_idx[c["id"]])
     ]
 
-    images_by_id = {img["id"]: img for img in coco["images"]}
+    images_by_id = {}
+    for img in coco["images"]:
+        if img["id"] in images_by_id:
+            raise ValueError(f"Duplicate image id {img['id']} in {coco_path}")
+        images_by_id[img["id"]] = img
     anns_by_image = defaultdict(list)
     for ann in coco["annotations"]:
         anns_by_image[ann["image_id"]].append(ann)
@@ -57,9 +61,16 @@ def convert(coco_path: str, images_dir: str, out_dir: str):
         src_img = os.path.join(images_dir, os.path.basename(image["file_name"]))
         dst_img = os.path.join(out_dir, "images", os.path.basename(image["file_name"]))
         if os.path.isfile(src_img) and not os.path.isfile(dst_img):
-            os.link(src_img, dst_img) if hasattr(os, "link") else _copy(src_img, dst_img)
+            try:
+                os.link(src_img, dst_img)
+            except (OSError, AttributeError, NotImplementedError):
+                _copy(src_img, dst_img)
 
     with open(os.path.join(out_dir, "data.yaml"), "w") as f:
+        # No train/val split is produced here, so both point at the same set.
+        f.write(f"path: {os.path.abspath(out_dir)}\n")
+        f.write("train: images\n")
+        f.write("val: images\n")
         f.write(f"nc: {len(class_names)}\n")
         f.write(f"names: {class_names}\n")
 

@@ -70,10 +70,12 @@ def _world_min_z(obj) -> float:
     """
     mesh = obj.get_mesh()
     mat = np.array(obj.get_local2world_mat())
-    verts = np.array([v.co for v in mesh.vertices])
-    verts_h = np.hstack([verts, np.ones((len(verts), 1))])
-    world_verts = verts_h @ mat.T
-    return float(np.min(world_verts[:, 2]))
+    verts = np.empty(len(mesh.vertices) * 3, dtype=np.float64)
+    mesh.vertices.foreach_get("co", verts)
+    verts = verts.reshape(-1, 3)
+    # Only the Z row of the affine transform is needed.
+    world_z = verts @ mat[2, :3] + mat[2, 3]
+    return float(world_z.min())
 
 
 def _class_weights(season_cfg: Dict[str, Any]) -> Dict[str, float]:
@@ -260,13 +262,19 @@ def randomize_camera(
         look_at_point = centroid + jitter
 
     cam2world = None
-    for _attempt in range(25):
+    for _attempt in range(100):
         cam2world = sample_camera_pose(cam_cfg, field_size_m, look_at_point=look_at_point)
         if not _camera_pose_blocked(cam2world[:3, 3], instances, structures):
             break
-        # else: re-roll (and if we run out of attempts, fall back to the last
-        # sampled pose rather than silently producing no camera at all - same
-        # best-effort-after-N-tries pattern as spawn_pieces' overlap retry).
+    else:
+        # Still blocked after many tries; retry once without a look-at target
+        # (random field position) before accepting a blocked pose.
+        for _attempt in range(100):
+            cam2world = sample_camera_pose(cam_cfg, field_size_m, look_at_point=None)
+            if not _camera_pose_blocked(cam2world[:3, 3], instances, structures):
+                break
+        else:
+            print("[randomizers] Warning: no unblocked camera pose found; using last sample")
 
     bproc.camera.add_camera_pose(cam2world)
     return cam2world

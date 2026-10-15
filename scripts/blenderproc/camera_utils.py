@@ -15,7 +15,7 @@ import numpy as np
 import blenderproc as bproc
 
 
-def set_intrinsics_from_camera_cfg(cam_cfg: Dict[str, Any]):
+def build_K_from_camera_cfg(cam_cfg: Dict[str, Any]) -> np.ndarray:
     width, height = cam_cfg["resolution"]
     hfov_rad = math.radians(cam_cfg["hfov_deg"])
     # Pinhole model: fx = (width / 2) / tan(hfov / 2)
@@ -23,8 +23,12 @@ def set_intrinsics_from_camera_cfg(cam_cfg: Dict[str, Any]):
     vfov_rad = math.radians(cam_cfg["vfov_deg"])
     fy = (height / 2.0) / math.tan(vfov_rad / 2.0)
     cx, cy = width / 2.0, height / 2.0
+    return np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
 
-    K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+
+def set_intrinsics_from_camera_cfg(cam_cfg: Dict[str, Any]):
+    width, height = cam_cfg["resolution"]
+    K = build_K_from_camera_cfg(cam_cfg)
     bproc.camera.set_intrinsics_from_K_matrix(K, width, height)
 
 
