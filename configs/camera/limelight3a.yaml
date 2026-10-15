@@ -27,7 +27,7 @@ standoff_range_m: [0.25, 1.5]
 sensor_degradation:
   enabled: true
 
-  exposure_jitter: [0.75, 1.3]        # multiplicative brightness
+  exposure_jitter: [0.75, 1.15]        # multiplicative brightness
   contrast_jitter: [0.85, 1.15]
   white_balance_jitter: [0.92, 1.08]  # opposing R/B channel gain shift
 

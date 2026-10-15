@@ -15,6 +15,8 @@ from typing import Any, Dict
 
 import blenderproc as bproc
 
+from surface_detail import add_piece_wear
+
 
 def make_material(color_rgb, roughness_jitter: float = 0.0):
     mat = bproc.material.create("piece_material")
@@ -36,6 +38,7 @@ def make_material(color_rgb, roughness_jitter: float = 0.0):
     bump.inputs["Strength"].default_value = 0.08
     links.new(noise.outputs["Fac"], bump.inputs["Height"])
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    add_piece_wear(mat)
     return mat
 
 

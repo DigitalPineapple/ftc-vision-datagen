@@ -19,11 +19,37 @@ robot_distractors:
 
 hdri:
   dir: assets/common/hdri       # environment maps for lighting randomization (gym interiors, etc.)
+  # Fetch the full venue set with: python scripts/assets/fetch_hdris.py
+  random_rotation: true         # random yaw per frame
+  # HDRIs whose filename contains any of these are used for the visible
+  # background only, never for lighting (they cast strong colored light).
+  lighting_exclude: [ferndale_studio, colorful_studio]
+  strength_range: [0.7, 1.4]    # log-uniform HDRI brightness multiplier
+  saturation_range: [0.85, 1.15]  # 1.0 = unchanged
+  neutralize: 1.0               # 0..1: cancel the lighting HDRI's color cast (keeps floor color natural)
+  normalize_target: 0.8         # floor-lighting irradiance every lighting HDRI is pulled toward (prevents blown-out frames)
+  normalize_amount: 0.85        # 0..1: how far toward the target
+  hue_shift_prob: 0.0           # chance of a random full-hue shift (tints the floor too; off by default)
+  tint_prob: 0.0                # chance of a random color tint (multiply; tints the floor too; off by default)
+  # Visible scenery (seen by the camera only) is a separately randomized HDRI,
+  # so it can vary a lot without changing the floor color or ambient light.
+  background:
+    separate: true
+    random_rotation: true
+    strength_range: [0.5, 2.0]
+    saturation_range: [0.6, 1.5]
+    hue_shift_prob: 0.5
+    tint_prob: 0.5
+  colored_lights:               # extra saturated point lights around the field
+    prob: 0.0                   # off by default: colored lights tint the floor
+    count_range: [1, 2]
+    energy_range: [20, 80]      # Watts; kept low so the floor color stays natural
+    z_range: [1.0, 3.0]         # meters above the floor
 
 render:
   engine: CYCLES
   samples: 100
-  denoise: false
+  denoise: true
   view_transform: AgX          # photographic-looking tonemap (vs. flat/clipped "Standard")
 
 output:

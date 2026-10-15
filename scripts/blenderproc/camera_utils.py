@@ -29,7 +29,9 @@ def build_K_from_camera_cfg(cam_cfg: Dict[str, Any]) -> np.ndarray:
 def set_intrinsics_from_camera_cfg(cam_cfg: Dict[str, Any]):
     width, height = cam_cfg["resolution"]
     K = build_K_from_camera_cfg(cam_cfg)
-    bproc.camera.set_intrinsics_from_K_matrix(K, width, height)
+    bproc.camera.set_intrinsics_from_K_matrix(
+        K, width, height, clip_start=cam_cfg.get("clip_start_m", 0.02)
+    )
 
 
 def sample_camera_pose(cam_cfg: Dict[str, Any], field_size_m, look_at_point=None):

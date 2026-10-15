@@ -33,21 +33,182 @@ from camera_utils import sample_camera_pose
 _INSTANCE_PASS_INDEX_BASE = 1000
 
 
+_randomized_lights: List[Any] = []
+_WORLD_NODE_TYPES = (
+    "ShaderNodeTexEnvironment", "ShaderNodeMapping", "ShaderNodeTexCoord",
+    "ShaderNodeHueSaturation", "ShaderNodeMixRGB",
+)
+
+
+def _hsv_to_rgb(h: float, s: float, v: float):
+    import colorsys
+    return list(colorsys.hsv_to_rgb(h, s, v))
+
+
+_hdri_stats_cache: Dict[str, Any] = {}
+
+
+def _hdri_stats(image):
+    """(per-channel white-balance gain, upper-hemisphere irradiance proxy) for
+    an equirectangular HDRI. The irradiance proxy is the cosine-weighted mean
+    of the upper hemisphere, i.e. roughly how brightly it lights a flat floor."""
+    if image.name not in _hdri_stats_cache:
+        w, h = image.size
+        px = np.empty(w * h * 4, dtype=np.float32)
+        image.pixels.foreach_get(px)
+        # Blender stores rows bottom-first; flip so row 0 is the zenith.
+        rgb = px.reshape(h, w, 4)[::-1, ::8, :3][::4]
+        theta = (np.arange(rgb.shape[0]) + 0.5) / rgb.shape[0] * np.pi
+        # Cosine-weighted, extra-steep toward the zenith: the perimeter walls block
+        # low-elevation light, so a floor is mostly lit from high overhead.
+        weight = np.where(theta < np.pi / 2, np.cos(theta) ** 3 * np.sin(theta), 0.0)[:, None, None]
+        # Color cast as seen by a floor: cosine-weighted upper hemisphere per channel.
+        floor_rgb = (rgb * weight).sum(axis=(0, 1)) / (weight.sum() * rgb.shape[1]) + 1e-6
+        irradiance = float(floor_rgb.mean())
+        _hdri_stats_cache[image.name] = (floor_rgb.mean() / floor_rgb, irradiance + 1e-6)
+    return _hdri_stats_cache[image.name]
+
+
+def _lighting_gain(image, cfg: Dict[str, Any]) -> List[float]:
+    """Per-channel gain: cancels `neutralize` of the HDRI's color cast and
+    moves its floor-lighting brightness `normalize_amount` of the way (in log
+    space) toward `normalize_target`, so very bright venues don't blow out."""
+    wb, irradiance = _hdri_stats(image)
+    amount = cfg.get("neutralize", 0.0)
+    gain = np.asarray(wb) ** amount if amount > 0 else np.ones(3)
+    target = cfg.get("normalize_target")
+    if target:
+        exposure = (target / irradiance) ** cfg.get("normalize_amount", 1.0)
+        gain = gain * float(np.clip(exposure, 0.2, 4.0))
+    return [float(g) for g in gain]
+
+
+def _set_randomized_hdri(path: str, hdri_cfg: Dict[str, Any], bg_paths: List[str]):
+    """Build the world shader for this frame: HDRI -> hue/saturation ->
+    color tint (multiply) -> Background, with random yaw rotation and
+    brightness. BlenderProc's own set_world_background_hdr_img() adds fresh
+    nodes on every call without removing the previous frame's, so the world
+    node tree is rebuilt from scratch here instead of letting nodes pile up."""
+    import bpy
+
+    world = bpy.context.scene.world
+    nodes, links = world.node_tree.nodes, world.node_tree.links
+    for node in [n for n in nodes if n.bl_idname in _WORLD_NODE_TYPES]:
+        nodes.remove(node)
+    background = next(n for n in nodes if n.bl_idname == "ShaderNodeBackground")
+    background.inputs["Strength"].default_value = 1.0
+
+    def env_chain(hdri_path: str, cfg: Dict[str, Any]):
+        """HDRI -> hue/saturation -> tint -> brightness; returns the color socket."""
+        tex_coord = nodes.new("ShaderNodeTexCoord")
+        mapping = nodes.new("ShaderNodeMapping")
+        env = nodes.new("ShaderNodeTexEnvironment")
+        env.image = bpy.data.images.load(hdri_path, check_existing=True)
+        links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
+        links.new(mapping.outputs["Vector"], env.inputs["Vector"])
+        if cfg.get("random_rotation", True):
+            mapping.inputs["Rotation"].default_value = [0.0, 0.0, random.uniform(0, 2 * np.pi)]
+
+        hue_sat = nodes.new("ShaderNodeHueSaturation")
+        # Hue 0.5 / Saturation 1.0 are the identity values.
+        hue_sat.inputs["Hue"].default_value = (
+            random.random() if random.random() < cfg.get("hue_shift_prob", 0.0) else 0.5
+        )
+        hue_sat.inputs["Saturation"].default_value = random.uniform(*cfg.get("saturation_range", [1.0, 1.0]))
+        links.new(env.outputs["Color"], hue_sat.inputs["Color"])
+
+        tint = nodes.new("ShaderNodeMixRGB")
+        tint.blend_type = "MULTIPLY"
+        use_tint = random.random() < cfg.get("tint_prob", 0.0)
+        tint.inputs["Fac"].default_value = random.uniform(0.3, 0.9) if use_tint else 0.0
+        tint.inputs["Color2"].default_value = _hsv_to_rgb(random.random(), random.uniform(0.4, 1.0), 1.0) + [1.0]
+        links.new(hue_sat.outputs["Color"], tint.inputs["Color1"])
+
+        lo, hi = cfg.get("strength_range", [1.0, 1.0])
+        # Log-uniform so dim and bright venues are sampled evenly.
+        gain = float(np.exp(random.uniform(np.log(lo), np.log(hi))))
+        bright = nodes.new("ShaderNodeMixRGB")
+        bright.blend_type = "MULTIPLY"
+        bright.inputs["Fac"].default_value = 1.0
+        bright.inputs["Color2"].default_value = [gain, gain, gain, 1.0]
+        links.new(tint.outputs["Color"], bright.inputs["Color1"])
+
+        if cfg.get("neutralize", 0.0) <= 0.0 and not cfg.get("normalize_target"):
+            return bright.outputs["Color"]
+        # White balance + exposure normalization (see _lighting_gain).
+        wb = nodes.new("ShaderNodeMixRGB")
+        wb.blend_type = "MULTIPLY"
+        wb.inputs["Fac"].default_value = 1.0
+        wb.inputs["Color2"].default_value = _lighting_gain(env.image, cfg) + [1.0]
+        links.new(bright.outputs["Color"], wb.inputs["Color1"])
+        return wb.outputs["Color"]
+
+    lighting_color = env_chain(path, hdri_cfg)
+
+    bg_cfg = hdri_cfg.get("background", {})
+    if bg_cfg.get("separate", False) and bg_paths:
+        # Camera rays see their own, independently randomized HDRI, while
+        # lighting/reflections (diffuse, glossy, shadow rays) keep using the
+        # subtle lighting HDRI above - so the visible scenery can vary a lot
+        # without changing the floor/tile color or the scene's ambient light.
+        bg_color = env_chain(random.choice(bg_paths), bg_cfg)
+        light_path = nodes.new("ShaderNodeLightPath")
+        select = nodes.new("ShaderNodeMixRGB")
+        links.new(light_path.outputs["Is Camera Ray"], select.inputs["Fac"])
+        links.new(lighting_color, select.inputs["Color1"])
+        links.new(bg_color, select.inputs["Color2"])
+        links.new(select.outputs["Color"], background.inputs["Color"])
+    else:
+        links.new(lighting_color, background.inputs["Color"])
+
+
+def _add_colored_lights(field_size_m, lights_cfg: Dict[str, Any]):
+    """Extra saturated point lights (stage/LED-style venue lighting) around the
+    field. Deleted and re-rolled every frame."""
+    for light in _randomized_lights:
+        light.delete()
+    _randomized_lights.clear()
+
+    if random.random() >= lights_cfg.get("prob", 0.6):
+        return
+    field_w, field_h = field_size_m
+    for _ in range(random.randint(*lights_cfg.get("count_range", [1, 3]))):
+        light = bproc.types.Light()
+        light.set_type("POINT")
+        light.set_location([
+            random.uniform(-field_w * 0.8, field_w * 0.8),
+            random.uniform(-field_h * 0.8, field_h * 0.8),
+            random.uniform(*lights_cfg.get("z_range", [1.0, 3.0])),
+        ])
+        light.set_color(_hsv_to_rgb(random.random(), random.uniform(0.5, 1.0), 1.0))
+        light.set_energy(random.uniform(*lights_cfg.get("energy_range", [60, 300])))
+        _randomized_lights.append(light)
+
+
 def randomize_lighting(common_cfg: Dict[str, Any], project_root: str):
-    hdri_dir = os.path.join(project_root, common_cfg["hdri"]["dir"])
+    hdri_cfg = common_cfg["hdri"]
+    hdri_dir = os.path.join(project_root, hdri_cfg["dir"])
     hdri_files = []
     if os.path.isdir(hdri_dir):
         hdri_files = [f for f in os.listdir(hdri_dir) if f.lower().endswith((".hdr", ".exr"))]
 
     if hdri_files:
-        chosen = os.path.join(hdri_dir, random.choice(hdri_files))
-        bproc.world.set_world_background_hdr_img(chosen)
+        full_paths = [os.path.join(hdri_dir, f) for f in hdri_files]
+        # Strongly colored-light HDRIs (colored studios) are scenery-only:
+        # using them for lighting would tint the floor/tiles.
+        excluded = hdri_cfg.get("lighting_exclude", [])
+        lighting_paths = [p for p in full_paths if not any(x in os.path.basename(p) for x in excluded)]
+        _set_randomized_hdri(random.choice(lighting_paths or full_paths), hdri_cfg, full_paths)
+        _add_colored_lights(common_cfg["field"]["size_m"], hdri_cfg.get("colored_lights", {}))
     else:
         # Fallback: a few randomized point/area lights approximating gym lighting.
         # (Point-light Watts fall off with distance, but these sit close to the
         # field - 300-1200W here was blowing out the matte field materials to a
         # washed-out, glossy-looking white. Toned down to a more realistic
         # gym-ceiling-light range.)
+        for light in _randomized_lights:
+            light.delete()
+        _randomized_lights.clear()
         for _ in range(random.randint(2, 4)):
             light = bproc.types.Light()
             light.set_type("POINT")
@@ -55,6 +216,7 @@ def randomize_lighting(common_cfg: Dict[str, Any], project_root: str):
                 [random.uniform(-2, 2), random.uniform(-2, 2), random.uniform(2, 4)]
             )
             light.set_energy(random.uniform(80, 300))
+            _randomized_lights.append(light)
 
 
 def _world_min_z(obj) -> float:
@@ -205,7 +367,7 @@ def spawn_pieces(scene: Dict[str, Any], season_cfg: Dict[str, Any], field_size_m
     return instances
 
 
-def _camera_pose_blocked(location, instances=None, structures=None, pad=0.05) -> bool:
+def _camera_pose_blocked(location, instances=None, structures=None, pad=0.05, piece_pad=0.12) -> bool:
     """True if `location` (a candidate camera position) ends up physically
     inside a spawned game piece or a static field structure (Hive frame/
     cells/legs, Flower posts, distractor robots, ...). sample_camera_pose()
@@ -218,7 +380,7 @@ def _camera_pose_blocked(location, instances=None, structures=None, pad=0.05) ->
     loc = np.asarray(location)
     for inst in instances or []:
         radius = inst.blender_obj.get("piece_radius", 0.035)
-        if np.linalg.norm(loc - np.array(inst.get_location())) <= radius + pad:
+        if np.linalg.norm(loc - np.array(inst.get_location())) <= radius + piece_pad:
             return True
     for el in structures or []:
         # get_bound_box() gives world-space AABB corners (see spawn_pieces'

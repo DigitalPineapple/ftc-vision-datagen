@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 import blenderproc as bproc
 
 from placeholder_assets import load_or_create_piece_template
+from surface_detail import add_floor_wear
 
 
 def load_field(common_cfg: Dict[str, Any], project_root: str):
@@ -116,7 +117,9 @@ def _style_field_materials(objs: List):
     # Raising roughness blurs that grazing-angle reflection into a soft,
     # low-contrast gradient instead of a flat, misleadingly-black region,
     # while still keeping the panel glossy/glass-like head-on.
-    glass_mat.set_principled_shader_value("Roughness", 0.15)
+    # (Later lowered to 0.05 on request for a clearer panel; if the dark
+    # grazing-angle wedge described above reappears, raise it again.)
+    glass_mat.set_principled_shader_value("Roughness", 0.05)
     glass_mat.set_principled_shader_value("Transmission Weight", 0.85)
     glass_mat.set_principled_shader_value("IOR", 1.45)
     # Physically, ANY dielectric (regardless of IOR) approaches 100% Fresnel
@@ -132,7 +135,16 @@ def _style_field_materials(objs: List):
     glass_objs = [o for o in objs if "glass" in o.get_name().lower()]
     for obj in glass_objs:
         obj.replace_materials(glass_mat)
-    _mattify_materials([o for o in objs if o not in glass_objs])
+    solid_objs = [o for o in objs if o not in glass_objs]
+    _mattify_materials(solid_objs)
+
+    # Only the gray foam floor tiles (Kd 0.502, unique to tiles.mtl) get wear.
+    worn = set()
+    for obj in solid_objs:
+        for mat in obj.get_materials():
+            if mat is not None and mat.get_name().startswith("0.501961") and mat.get_name() not in worn:
+                worn.add(mat.get_name())
+                add_floor_wear(mat)
 
 
 def _make_cell_wall_material():

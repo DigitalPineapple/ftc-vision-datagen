@@ -26,3 +26,10 @@ __pycache__/
 
 # Local staging area for scripts/assets/package_release_assets.py output.
 /dist/
+
+# HDRIs fetched by scripts/assets/fetch_hdris.py (Poly Haven, CC0). Only the
+# two originally committed ones are tracked.
+/assets/common/hdri/*
+!/assets/common/hdri/README.md
+!/assets/common/hdri/empty_warehouse_01_2k.hdr
+!/assets/common/hdri/gym_entrance_2k.hdr

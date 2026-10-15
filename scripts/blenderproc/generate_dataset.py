@@ -54,6 +54,8 @@ def parse_args():
     parser.add_argument("--camera", default="limelight3a")
     parser.add_argument("--num_images", type=int, default=100)
     parser.add_argument("--output", default=None, help="defaults to output/<season>")
+    parser.add_argument("--denoise", choices=["on", "off"], default=None,
+                        help="override render.denoise from configs/common.yaml")
     return parser.parse_args()
 
 
@@ -88,7 +90,8 @@ def main():
     # render speed for correctness.
     bpy.context.scene.render.use_persistent_data = False
     bproc.renderer.set_max_amount_of_samples(common_cfg["render"]["samples"])
-    bproc.renderer.set_denoiser("INTEL" if common_cfg["render"].get("denoise") else None)
+    denoise = common_cfg["render"].get("denoise") if args.denoise is None else args.denoise == "on"
+    bproc.renderer.set_denoiser("INTEL" if denoise else None)
     # "Standard" (BlenderProc/Blender's non-photographic default) clips highlights
     # and looks flat/CG under HDRI lighting. AgX (Blender 4.x's built-in filmic-like
     # tonemapper) rolls off highlights/saturation the way a real camera sensor
