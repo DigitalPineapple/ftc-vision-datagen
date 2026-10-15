@@ -28,6 +28,7 @@ import argparse
 import os
 import sys
 
+import bpy
 import yaml
 
 from blenderproc.python.utility.LabelIdMapping import LabelIdMapping
@@ -68,6 +69,23 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     bproc.init()
+    # bproc.init() -> RendererUtility.render_init() turns this ON unconditionally
+    # (its own source comment admits "makes rendering get slower and slower,
+    # probably a blender bug"). Persistent Data tells Cycles to cache per-object
+    # BVH/shading acceleration structures across frames - a reasonable win for a
+    # static animated scene, but we delete and recreate dozens of game-piece
+    # objects every single frame (spawn_pieces()/inst.delete()), which is the
+    # worst case for this cache: Blender can reuse a deleted object's memory
+    # address for a newly-created one, and Cycles can end up reusing a stale
+    # cached BVH/shading entry for the new object. This reproduced visibly as
+    # monotonically increasing per-frame render times in local testing (the
+    # same "slower and slower" symptom BlenderProc's own comment describes) and
+    # is the leading suspect for the rare (~0.1-1%) solid-black-ball artifact -
+    # one random instance per affected frame rendering with a stale/degenerate
+    # cached normal (diffuse reads black) while still catching real specular
+    # highlights via live ray tracing. Turning it back off trades a little
+    # render speed for correctness.
+    bpy.context.scene.render.use_persistent_data = False
     bproc.renderer.set_max_amount_of_samples(common_cfg["render"]["samples"])
     bproc.renderer.set_denoiser("INTEL" if common_cfg["render"].get("denoise") else None)
     # "Standard" (BlenderProc/Blender's non-photographic default) clips highlights
@@ -94,7 +112,8 @@ def main():
         bproc.utility.reset_keyframes()
         randomize_lighting(common_cfg, PROJECT_ROOT)
         instances = spawn_pieces(scene, season_cfg, field_size_m)
-        randomize_camera(cam_cfg, field_size_m, instances)
+        structures = scene["field_elements"] + scene["distractors"]
+        randomize_camera(cam_cfg, field_size_m, instances, structures)
 
         data = bproc.renderer.render()
 

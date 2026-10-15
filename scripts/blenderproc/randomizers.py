@@ -180,6 +180,10 @@ def spawn_pieces(scene: Dict[str, Any], season_cfg: Dict[str, Any], field_size_m
         # pieces of that class in a frame collapse into a single annotation.
         inst.blender_obj.pass_index = next_pass_index
         next_pass_index += 1
+        # Stash the radius as a custom property so randomize_camera() can do
+        # a cheap point-in-sphere check against this instance later, without
+        # re-deriving it from season_cfg again.
+        inst.blender_obj["piece_radius"] = radius
         inst.set_location([x, y, 0.0])
         inst.set_rotation_euler([random.uniform(0, np.pi) for _ in range(3)])
         # Real Onshape-exported CAD isn't guaranteed to be a perfectly
@@ -199,7 +203,37 @@ def spawn_pieces(scene: Dict[str, Any], season_cfg: Dict[str, Any], field_size_m
     return instances
 
 
-def randomize_camera(cam_cfg: Dict[str, Any], field_size_m, instances=None) -> np.ndarray:
+def _camera_pose_blocked(location, instances=None, structures=None, pad=0.05) -> bool:
+    """True if `location` (a candidate camera position) ends up physically
+    inside a spawned game piece or a static field structure (Hive frame/
+    cells/legs, Flower posts, distractor robots, ...). sample_camera_pose()
+    only constrains (x, y) to the field footprint and z to the configured
+    mount-height range - it has no awareness of what's actually standing at
+    that (x, y, z), so without this check the random pose occasionally lands
+    the viewpoint *inside* a ball (solid-color/out-of-focus frame filling the
+    whole image) or clipped through a structure's geometry.
+    """
+    loc = np.asarray(location)
+    for inst in instances or []:
+        radius = inst.blender_obj.get("piece_radius", 0.035)
+        if np.linalg.norm(loc - np.array(inst.get_location())) <= radius + pad:
+            return True
+    for el in structures or []:
+        # get_bound_box() gives world-space AABB corners (see spawn_pieces'
+        # exclusion_rects note) - a coarse but safe-by-over-exclusion test
+        # for irregularly-shaped structures like the Hive frame.
+        bbox = np.array(el.get_bound_box())
+        xmin, xmax = bbox[:, 0].min() - pad, bbox[:, 0].max() + pad
+        ymin, ymax = bbox[:, 1].min() - pad, bbox[:, 1].max() + pad
+        zmin, zmax = bbox[:, 2].min() - pad, bbox[:, 2].max() + pad
+        if xmin <= loc[0] <= xmax and ymin <= loc[1] <= ymax and zmin <= loc[2] <= zmax:
+            return True
+    return False
+
+
+def randomize_camera(
+    cam_cfg: Dict[str, Any], field_size_m, instances=None, structures=None
+) -> np.ndarray:
     """Aim the camera at a locally-relevant cluster of spawned pieces (with
     jitter) most of the time, matching how a robot's Limelight would actually
     be pointed at the piece(s) it's driving up to intake. Occasionally (10%)
@@ -225,6 +259,14 @@ def randomize_camera(cam_cfg: Dict[str, Any], field_size_m, instances=None) -> n
         )
         look_at_point = centroid + jitter
 
-    cam2world = sample_camera_pose(cam_cfg, field_size_m, look_at_point=look_at_point)
+    cam2world = None
+    for _attempt in range(25):
+        cam2world = sample_camera_pose(cam_cfg, field_size_m, look_at_point=look_at_point)
+        if not _camera_pose_blocked(cam2world[:3, 3], instances, structures):
+            break
+        # else: re-roll (and if we run out of attempts, fall back to the last
+        # sampled pose rather than silently producing no camera at all - same
+        # best-effort-after-N-tries pattern as spawn_pieces' overlap retry).
+
     bproc.camera.add_camera_pose(cam2world)
     return cam2world

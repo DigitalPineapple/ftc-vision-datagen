@@ -19,6 +19,7 @@ import math
 import os
 import sys
 
+import bpy
 import numpy as np
 import yaml
 
@@ -49,6 +50,10 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     bproc.init()
+    # See generate_dataset.py's note on this - bproc.init() turns Cycles
+    # Persistent Data on unconditionally, which is actively harmful for a
+    # pipeline that deletes/recreates piece objects every frame.
+    bpy.context.scene.render.use_persistent_data = False
     bproc.renderer.set_max_amount_of_samples(common_cfg["render"]["samples"])
     bproc.renderer.set_denoiser("INTEL" if common_cfg["render"].get("denoise") else None)
     bproc.renderer.set_output_format(view_transform=common_cfg["render"].get("view_transform", "AgX"))
